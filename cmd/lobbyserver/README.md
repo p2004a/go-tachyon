@@ -10,14 +10,15 @@ Server supports following OAuth2 RFCs:
 - [RFC 6750](https://tools.ietf.org/html/rfc6750) - The OAuth 2.0 Authorization Framework: Bearer Token Usage
 - [RFC 7636](https://tools.ietf.org/html/rfc7636) - Proof Key for Code Exchange by OAuth Public Clients
 - [RFC 8252](https://tools.ietf.org/html/rfc8252) - OAuth 2.0 for Native Apps
+- [RFC 8414](https://tools.ietf.org/html/rfc8414) - OAuth 2.0 Authorization Server Metadata
 
 Planned:
-- [RFC 8414](https://tools.ietf.org/html/rfc8414) - OAuth 2.0 Authorization Server Metadata
 - [RFC 7009](https://tools.ietf.org/html/rfc7009) - OAuth 2.0 Token Revocation
 - [RFC 7662](https://tools.ietf.org/html/rfc7662) - OAuth 2.0 Token Introspection
 
 Considered:
 - [RFC 7523](https://tools.ietf.org/html/rfc7523) - JSON Web Token (JWT) Profile for OAuth 2.0 Client Authentication and Authorization Grants
+- [RFC 8693](https://tools.ietf.org/html/rfc8693) - OAuth 2.0 Token Exchange
 
 The servers also tries to follow the [OAuth 2.0 Security Best Current Practice](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-security-topics) and the [OAuth 2.1 draft](https://oauth.net/2.1/).
 

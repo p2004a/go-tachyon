@@ -23,8 +23,9 @@ import (
 )
 
 type config struct {
-	HttpPort  int  `default:"8080"`
-	ForcePKCE bool `default:"true"`
+	Host      string `default:"localhost"`
+	HttpPort  int    `default:"8080"`
+	ForcePKCE bool   `default:"true"`
 }
 
 var sessionManager *scs.SessionManager
@@ -66,6 +67,12 @@ func main() {
 		log.Fatalf("parsing config failed %v", err)
 		os.Exit(1)
 	}
+	var baseUrl string
+	if conf.Host == "localhost" {
+		baseUrl = fmt.Sprintf("http://%s:%d", conf.Host, conf.HttpPort)
+	} else {
+		baseUrl = fmt.Sprintf("https://%s", conf.Host)
+	}
 
 	sessionManager = scs.New()
 	sessionManager.Lifetime = 24 * time.Hour
@@ -89,6 +96,7 @@ func main() {
 	// https://tools.ietf.org/html/rfc8252#section-8.1
 	oauthSrv.Config.ForcePKCE = conf.ForcePKCE
 	oauthSrv.SetAllowedGrantType("authorization_code", "refresh_token")
+	oauthSrv.SetAllowedResponseType("code")
 	oauthSrv.SetUserAuthorizationHandler(func(w http.ResponseWriter, r *http.Request) (string, error) {
 		// If the user is already logged in, allow the request.
 		user := sessionManager.GetString(r.Context(), "user")
@@ -123,6 +131,7 @@ func main() {
 	r.Use(sessionManager.LoadAndSave)
 	// https://tools.ietf.org/html/rfc6749#section-10.13
 	r.Use(middleware.SetHeader("X-Frame-Options", "DENY"))
+	r.Use(middleware.GetHead)
 
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		component := index()
@@ -247,6 +256,29 @@ func main() {
 			log.Printf("handling token request failed %+v", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		}
+	})
+
+	r.Get("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{
+			"issuer": "%s",
+			"authorization_endpoint": "%s/oauth2/authorize",
+			"token_endpoint": "%s/oauth2/token",
+			"scopes_supported": [
+				"lobby"
+			],
+			"response_types_supported": [
+				"code"
+			],
+			"grant_types_supported": [
+				"authorization_code",
+				"refresh_token"
+			],
+			"code_challenge_methods_supported": [
+				"plain",
+				"S256"
+			]
+		}`, baseUrl, baseUrl, baseUrl)
 	})
 
 	log.Printf("Started HTTP listening on %d", conf.HttpPort)
