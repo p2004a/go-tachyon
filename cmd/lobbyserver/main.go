@@ -227,6 +227,20 @@ func main() {
 		}
 	})
 
+	r.Get("/oauth2/test", func(w http.ResponseWriter, r *http.Request) {
+		token, err := oauthSrv.ValidationBearerToken(r)
+		if err == errors.ErrInvalidAccessToken {
+			http.Header.Add(w.Header(), "WWW-Authenticate", `Bearer realm="oauth2-test"`)
+			http.Error(w, err.Error(), http.StatusUnauthorized)
+			return
+		} else if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		http.Header.Add(w.Header(), "Content-Type", "text/plain")
+		fmt.Fprintf(w, "Hello, %s!", token.GetUserID())
+	})
+
 	r.HandleFunc("/oauth2/token", func(w http.ResponseWriter, r *http.Request) {
 		err := oauthSrv.HandleTokenRequest(w, r)
 		if err != nil {
