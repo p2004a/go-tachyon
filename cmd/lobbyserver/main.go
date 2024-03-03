@@ -13,6 +13,7 @@ import (
 	"github.com/alexedwards/scs/v2"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-oauth2/oauth2/v4"
 	"github.com/go-oauth2/oauth2/v4/errors"
 	"github.com/go-oauth2/oauth2/v4/manage"
 	"github.com/go-oauth2/oauth2/v4/models"
@@ -125,7 +126,7 @@ func main() {
 	r.Use(middleware.Recoverer)
 	r.Use(func(h http.Handler) http.Handler {
 		csrfHandler := nosurf.New(h)
-		csrfHandler.ExemptPaths("/oauth2/token")
+		csrfHandler.ExemptPaths("/oauth2/token", "/oauth2/revoke")
 		return csrfHandler
 	})
 	r.Use(sessionManager.LoadAndSave)
@@ -196,22 +197,17 @@ func main() {
 
 	r.Get("/oauth2/authorize", func(w http.ResponseWriter, r *http.Request) {
 		// Extract and verify the client.
-		client_id := r.FormValue("client_id")
-		client, err := oauthSrv.Manager.GetClient(r.Context(), client_id)
+		clientId := r.FormValue("client_id")
+		client, err := oauthSrv.Manager.GetClient(r.Context(), clientId)
 		if err != nil {
-			if err == errors.ErrInvalidClient {
-				http.Error(w, err.Error(), http.StatusBadRequest)
-			} else {
-				log.Printf("getting client failed %+v", err)
-				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-			}
+			respondJson(w, *oauthSrv, err)
 			return
 		}
 		myClient := client.(*MyClient)
 
 		// Verify the redirect URI per https://tools.ietf.org/html/rfc6749#section-4.1.2.1
-		redirect_uri := r.FormValue("redirect_uri")
-		if err := validateRedirectUri(myClient.Domain, redirect_uri); err != nil {
+		redirectUri := r.FormValue("redirect_uri")
+		if err := validateRedirectUri(myClient.Domain, redirectUri); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -258,6 +254,68 @@ func main() {
 		}
 	})
 
+	r.Post("/oauth2/revoke", func(w http.ResponseWriter, r *http.Request) {
+		clientId, _, err := oauthSrv.ClientInfoHandler(r)
+		if err != nil {
+			respondJson(w, *oauthSrv, err)
+			return
+		}
+		client, err := oauthSrv.Manager.GetClient(r.Context(), clientId)
+		if err != nil {
+			respondJson(w, *oauthSrv, err)
+			return
+		}
+
+		token := r.FormValue("token")
+		if token == "" {
+			respondJson(w, *oauthSrv, errors.ErrInvalidRequest)
+			return
+		}
+
+		checkToken := func(ti oauth2.TokenInfo, error) (bool, error) {
+
+		}
+
+		ti, err := oauthSrv.Manager.LoadAccessToken(r.Context(), token)
+		if err != nil &&
+			err != errors.ErrInvalidAccessToken &&
+			err != errors.ErrExpiredAccessToken &&
+			err != errors.ErrExpiredRefreshToken {
+			respondJson(w, *oauthSrv, errors.ErrServerError)
+			return
+		} else if err == nil {
+			if ti.GetClientID() != client.GetID() {
+				respondJson(w, *oauthSrv, errors.ErrInvalidRequest)
+				return
+			}
+			if err := oauthSrv.Manager.RemoveAccessToken(r.Context(), token); err != nil {
+				respondJson(w, *oauthSrv, errors.ErrServerError)
+				return
+			}
+		}
+
+		if err == errors.ErrInvalidAccessToken {
+			ti, err = oauthSrv.Manager.LoadRefreshToken(r.Context(), token)
+			if err != nil &&
+				err != errors.ErrInvalidRefreshToken &&
+				err != errors.ErrExpiredRefreshToken {
+				respondJson(w, *oauthSrv, errors.ErrServerError)
+				return
+			} else if err == nil {
+				if ti.GetClientID() != client.GetID() {
+					respondJson(w, *oauthSrv, errors.ErrInvalidRequest)
+					return
+				}
+				if err := oauthSrv.Manager.RemoveRefreshToken(r.Context(), token); err != nil {
+					respondJson(w, *oauthSrv, errors.ErrServerError)
+					return
+				}
+			}
+		}
+
+		w.WriteHeader(http.StatusOK)
+	})
+
 	r.Get("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprintf(w, `{
@@ -286,6 +344,19 @@ func main() {
 		log.Printf("Serving http failed %+v", err)
 		os.Exit(2)
 	}
+}
+
+func respondJson(w http.ResponseWriter, srv server.Server, err error) error {
+	data, status, header := srv.GetErrorData(err)
+
+	w.Header().Set("Content-Type", "application/json;charset=UTF-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
+	for key := range header {
+		w.Header().Set(key, header.Get(key))
+	}
+	w.WriteHeader(status)
+	return json.NewEncoder(w).Encode(data)
 }
 
 // validateRedirectUri validates that the redirect URI is a valid one according to RFC 8252.
